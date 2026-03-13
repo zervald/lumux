@@ -79,12 +79,15 @@
   <releases>
     <release version="0.4.2" date="2026-03-13">
       <description>
-        <p>New features and improvements:</p>
+        <p>New features and fixes:</p>
         <ul>
           <li>Added Reading Mode with configurable static color and brightness controls</li>
           <li>Added automatic Reading Mode activation on startup</li>
           <li>Improved Reading Mode responsiveness with debounced brightness updates and auto-apply behavior</li>
           <li>Fixed autostart setup by creating the desktop entry directory automatically and handling Flatpak permission errors more gracefully</li>
+          <li>Added a capture source selector to sync either the entire screen or a single window</li>
+          <li>Improved capture cleanup so stopping sync also closes the active PipeWire portal session</li>
+          <li>Saved the selected capture source in settings so it persists across restarts</li>
         </ul>
       </description>
     </release>

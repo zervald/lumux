@@ -37,6 +37,8 @@ class MainWindow(Adw.ApplicationWindow):
         
         # Brightness slider debounce timer
         self._brightness_timeout_id = None
+        
+        self._quitting = False
 
         # Connect mode change callback
         self.mode_manager.set_mode_changed_callback(self._on_mode_changed)
@@ -45,6 +47,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._setup_css()
         self._build_ui()
         self._setup_tray_icon()
+        self._setup_minimize_handler()
         # Run an initial bridge connection check so UI reflects state
         self._check_bridge_connection()
 
@@ -74,6 +77,23 @@ class MainWindow(Adw.ApplicationWindow):
         except Exception as e:
             print(f"Note: System tray not available: {e}")
             self._tray_icon = None
+
+    def _setup_minimize_handler(self):
+        """Intercept minimize button to hide to tray when tray is available."""
+        self._minimized_by_us = False
+        self.connect("notify::minimized", self._on_window_minimized)
+
+    def _on_window_minimized(self, window, pspec):
+        """When the window manager minimizes the window, hide to tray instead."""
+        if window.props.minimized and not self._minimized_by_us:
+            if self._tray_icon:
+                self._minimized_by_us = True
+                self.hide()
+                GLib.idle_add(self._reset_minimized_flag)
+
+    def _reset_minimized_flag(self):
+        self._minimized_by_us = False
+        return False
 
     def _setup_css(self):
         """Apply custom CSS styling."""
@@ -879,7 +899,11 @@ class MainWindow(Adw.ApplicationWindow):
         self._apply_window_size()
 
     def do_close_request(self) -> bool:
-        """Handle window close request."""
+        """Handle window close request - minimize to tray if available, otherwise quit."""
+        if self._tray_icon and not self._quitting:
+            self.hide()
+            return True
+
         if hasattr(self, 'mode_manager'):
             self.mode_manager.turn_off(turn_off_lights=False)
         elif self.sync_controller.is_running():
@@ -889,12 +913,10 @@ class MainWindow(Adw.ApplicationWindow):
             GLib.source_remove(self.status_timeout_id)
             self.status_timeout_id = None
         
-        # Clean up brightness debounce timer
         if self._brightness_timeout_id:
             GLib.source_remove(self._brightness_timeout_id)
             self._brightness_timeout_id = None
         
-        # Clean up tray icon
         if self._tray_icon:
             self._tray_icon.destroy()
             self._tray_icon = None

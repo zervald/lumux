@@ -43,11 +43,13 @@ class ModeManager:
                  bridge: HueBridge,
                  sync_controller: SyncController,
                  entertainment_stream: Optional[EntertainmentStream],
-                 reading_mode: ReadingModeSettings = None):
+                 reading_mode: ReadingModeSettings = None,
+                 entertainment_config_id: str = ""):
         self.bridge = bridge
         self.sync_controller = sync_controller
         self.entertainment_stream = entertainment_stream
         self.reading_settings = reading_mode
+        self._entertainment_config_id = entertainment_config_id
         
         self.current_mode = Mode.OFF
         self._reading_controller: Optional[ReadingModeController] = None
@@ -68,8 +70,7 @@ class ModeManager:
     def get_reading_controller(self) -> ReadingModeController:
         """Get or create reading mode controller."""
         if self._reading_controller is None:
-            self._reading_controller = ReadingModeController(self.bridge)
-            # Configure target lights from settings if available
+            self._reading_controller = ReadingModeController(self.bridge, self._entertainment_config_id)
             if self.reading_settings and self.reading_settings.light_ids:
                 self._reading_controller.set_target_lights(self.reading_settings.light_ids)
         return self._reading_controller
@@ -217,7 +218,9 @@ class ModeManager:
         if callback:
             callback(result)
         
-        return False  # Always return False for GLib timeout
+        if HAS_GLIB:
+            return False
+        return result
     
     def turn_off(self, turn_off_lights: bool = True) -> bool:
         """Turn off all lighting control.

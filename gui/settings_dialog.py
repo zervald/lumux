@@ -149,6 +149,16 @@ class SettingsDialog(Adw.PreferencesDialog):
             self.minimize_row.set_active(False)
         general_group.add(self.minimize_row)
 
+        # Minimize at startup
+        self.minimize_startup_row = Adw.SwitchRow()
+        self.minimize_startup_row.set_title("Minimize at Startup")
+        self.minimize_startup_row.set_subtitle("Start Lumux minimized to system tray")
+        try:
+            self.minimize_startup_row.set_active(self.settings.ui.minimize_at_startup)
+        except Exception:
+            self.minimize_startup_row.set_active(False)
+        general_group.add(self.minimize_startup_row)
+
         # Capture page
         capture_page = Adw.PreferencesPage()
         capture_page.set_title("Capture")
@@ -634,6 +644,11 @@ class SettingsDialog(Adw.PreferencesDialog):
 
         try:
             self.settings.ui.minimize_to_tray_on_sync = bool(self.minimize_row.get_active())
+        except Exception:
+            pass
+        
+        try:
+            self.settings.ui.minimize_at_startup = bool(self.minimize_startup_row.get_active())
         except Exception:
             pass
         

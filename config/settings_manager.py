@@ -50,6 +50,7 @@ class SyncSettings:
 class UISettings:
     start_at_startup: bool = False
     minimize_to_tray_on_sync: bool = False
+    minimize_at_startup: bool = False
 
 
 @dataclass
@@ -232,6 +233,10 @@ class SettingsManager:
             self._settings.ui.minimize_to_tray_on_sync = bool(self._settings.ui.minimize_to_tray_on_sync)
         except Exception:
             self._settings.ui.minimize_to_tray_on_sync = False
+        try:
+            self._settings.ui.minimize_at_startup = bool(self._settings.ui.minimize_at_startup)
+        except Exception:
+            self._settings.ui.minimize_at_startup = False
 
         # Black bar settings validation
         try:

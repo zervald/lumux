@@ -50,23 +50,51 @@ class LumuxApp(Adw.Application):
     
     def _on_quit(self, action, param):
         """Quit the application."""
+        if self.main_window:
+            self.main_window._quitting = True
         self.quit()
     
     def _auto_activate_reading_mode(self):
         """Auto-activate reading mode after startup delay.
         
-        Returns False to stop the GLib timeout.
+        Retries periodically if the bridge isn't ready yet (common at
+        system startup when the network stack may still be initializing).
+        
+        Returns False to stop the GLib timeout (on success or max retries).
         """
+        if not (self.app_context and self.app_context.mode_manager):
+            self._auto_activate_retries = getattr(self, '_auto_activate_retries', 0) + 1
+            if self._auto_activate_retries < 20:
+                GLib.timeout_add(1000, self._auto_activate_reading_mode)
+            return False
+
         try:
-            if self.app_context and self.app_context.mode_manager:
-                result = self.app_context.mode_manager.switch_to_reading()
-                if result:
-                    print("Reading mode auto-activated on startup")
+            if self.app_context.mode_manager.is_reading_active():
+                print("Reading mode already active")
+                self._auto_activate_retries = 0
+                return False
+
+            if not self.app_context.bridge.test_connection():
+                self.app_context.bridge.connect()
+
+            result = self.app_context.mode_manager.switch_to_reading()
+            if result:
+                print("Reading mode auto-activated on startup")
+                self._auto_activate_retries = 0
+                return False
+            else:
+                self._auto_activate_retries = getattr(self, '_auto_activate_retries', 0) + 1
+                if self._auto_activate_retries < 20:
+                    print(f"Bridge not ready, retrying reading mode activation ({self._auto_activate_retries}/20)...")
+                    GLib.timeout_add(1000, self._auto_activate_reading_mode)
                 else:
-                    print("Failed to auto-activate reading mode")
+                    print("Giving up on auto-activating reading mode after 20 retries")
         except Exception as e:
             print(f"Error auto-activating reading mode: {e}")
-        return False  # Stop the timeout
+            self._auto_activate_retries = getattr(self, '_auto_activate_retries', 0) + 1
+            if self._auto_activate_retries < 20:
+                GLib.timeout_add(1000, self._auto_activate_reading_mode)
+        return False
 
     def on_activate(self, app):
         """Initialize and show main window."""
@@ -93,13 +121,24 @@ class LumuxApp(Adw.Application):
             print("Please configure bridge IP and app key in Settings")
 
         self.main_window = MainWindow(self, self.app_context)
-        self.main_window.present()
         
-        # Auto-activate reading mode on startup if enabled
-        if (bridge_status.connected and 
-            settings.reading_mode.auto_activate_on_startup):
-            print("Auto-activating reading mode on startup...")
-            GLib.timeout_add(500, self._auto_activate_reading_mode)
+        # Minimize at startup if setting is enabled and tray is available
+        if settings.ui.minimize_at_startup and self.main_window._tray_icon:
+            self.main_window.hide()
+        else:
+            self.main_window.present()
+        
+        # Auto-activate reading mode on startup if enabled.
+        # Even if bridge is not connected yet, schedule retries since
+        # the network may still be initializing at system startup.
+        if settings.reading_mode.auto_activate_on_startup:
+            if bridge_status.connected:
+                print("Auto-activating reading mode on startup...")
+                GLib.timeout_add(500, self._auto_activate_reading_mode)
+            else:
+                print("Bridge not connected yet, will retry reading mode activation...")
+                self._auto_activate_retries = 0
+                GLib.timeout_add(2000, self._auto_activate_reading_mode)
     
     def _setup_app_icon(self):
         """Set up the application icon."""

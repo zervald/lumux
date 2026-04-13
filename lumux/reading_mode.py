@@ -27,10 +27,11 @@ class ReadingModeController:
     No continuous streaming needed - bridge maintains state.
     """
     
-    def __init__(self, bridge: HueBridge):
+    def __init__(self, bridge: HueBridge, entertainment_config_id: str = ""):
         self.bridge = bridge
         self._state = ReadingModeState()
         self._target_light_ids: List[str] = []
+        self._entertainment_config_id = entertainment_config_id
     
     def set_target_lights(self, light_ids: List[str]):
         """Set which lights to control in reading mode.
@@ -172,11 +173,8 @@ class ReadingModeController:
         """
         if self._target_light_ids:
             return self._target_light_ids
-        
-        # Try to get lights from entertainment config
-        config_id = self.bridge.settings.hue.entertainment_config_id if hasattr(self.bridge, 'settings') else None
-        if not config_id and hasattr(self.bridge, 'app_context'):
-            config_id = self.bridge.app_context.settings.hue.entertainment_config_id
+
+        config_id = self._entertainment_config_id
         
         if config_id:
             try:

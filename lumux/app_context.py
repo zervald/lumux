@@ -64,7 +64,8 @@ class AppContext:
             bridge=self.bridge,
             sync_controller=self.sync_controller,
             entertainment_stream=self.entertainment_stream,
-            reading_mode=settings.reading_mode
+            reading_mode=settings.reading_mode,
+            entertainment_config_id=settings.hue.entertainment_config_id
         )
         
         # Connect sync stop callback for auto-switching to reading mode

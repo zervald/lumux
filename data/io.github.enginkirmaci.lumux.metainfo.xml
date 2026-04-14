@@ -83,7 +83,6 @@
         <ul>
           <li>Fixed Hue lights staying on after application or system shutdown</li>
           <li>Fixed autostart toggle not persisting in Flatpak sandbox</li>
-          <li>Added auto-start sync on launch option for seamless startup experience</li>
           <li>Added SIGTERM signal handler for clean shutdown during system power off</li>
           <li>Improved autostart file path detection in Flatpak environments</li>
         </ul>

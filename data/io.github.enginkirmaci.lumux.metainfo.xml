@@ -44,27 +44,27 @@
 
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/enginkirmaci/lumux/v0.4.2/screenshots/screenshot1.png</image>
+      <image>https://raw.githubusercontent.com/enginkirmaci/lumux/main/screenshots/screenshot1.png</image>
       <caption>Main application window with zone preview</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/enginkirmaci/lumux/v0.4.2/screenshots/screenshot2.png</image>
+      <image>https://raw.githubusercontent.com/enginkirmaci/lumux/main/screenshots/screenshot2.png</image>
       <caption>Bridge configuration</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/enginkirmaci/lumux/v0.4.2/screenshots/screenshot3.png</image>
+      <image>https://raw.githubusercontent.com/enginkirmaci/lumux/main/screenshots/screenshot3.png</image>
       <caption>General configuration</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/enginkirmaci/lumux/v0.4.2/screenshots/screenshot4.png</image>
+      <image>https://raw.githubusercontent.com/enginkirmaci/lumux/main/screenshots/screenshot4.png</image>
       <caption>Capture configuration</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/enginkirmaci/lumux/v0.4.2/screenshots/screenshot5.png</image>
+      <image>https://raw.githubusercontent.com/enginkirmaci/lumux/main/screenshots/screenshot5.png</image>
       <caption>Zones configuration</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/enginkirmaci/lumux/v0.4.2/screenshots/screenshot6.png</image>
+      <image>https://raw.githubusercontent.com/enginkirmaci/lumux/main/screenshots/screenshot6.png</image>
       <caption>Sync configuration</caption>
     </screenshot>
   </screenshots>
@@ -77,6 +77,18 @@
   </branding>
 
   <releases>
+    <release version="0.5.0" date="2026-04-15">
+      <description>
+        <p>Bug fixes and improvements:</p>
+        <ul>
+          <li>Fixed Hue lights staying on after application or system shutdown</li>
+          <li>Fixed autostart toggle not persisting in Flatpak sandbox</li>
+          <li>Added auto-start sync on launch option for seamless startup experience</li>
+          <li>Added SIGTERM signal handler for clean shutdown during system power off</li>
+          <li>Improved autostart file path detection in Flatpak environments</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.2" date="2026-03-13">
       <description>
         <p>New features and fixes:</p>

@@ -3,7 +3,7 @@
 import queue
 import threading
 import time
-from typing import Dict, Tuple, Optional
+from typing import Dict, Optional, Tuple, Callable
 
 from lumux.utils.logging import timed_print
 from lumux.hue_bridge import HueBridge
@@ -15,10 +15,16 @@ from config.zone_mapping import ZoneMapping
 
 
 class SyncController:
-    def __init__(self, bridge: HueBridge, capture: ScreenCapture,
-                 zone_processor: ZoneProcessor, color_analyzer: ColorAnalyzer,
-                 zone_mapping: ZoneMapping, settings, 
-                 entertainment_stream: Optional[EntertainmentStream] = None):
+    def __init__(
+        self,
+        bridge: HueBridge,
+        capture: ScreenCapture,
+        zone_processor: ZoneProcessor,
+        color_analyzer: ColorAnalyzer,
+        zone_mapping: ZoneMapping,
+        settings,
+        entertainment_stream: Optional[EntertainmentStream] = None,
+    ):
         self.bridge = bridge
         self.capture = capture
         self.zone_processor = zone_processor
@@ -37,16 +43,16 @@ class SyncController:
         self._zone_channel_map: Dict[str, int] = {}
 
         self._stats = {
-            'fps': 0,
-            'frame_count': 0,
-            'errors': 0,
-            'last_update': time.time()
+            "fps": 0,
+            "frame_count": 0,
+            "errors": 0,
+            "last_update": time.time(),
         }
 
         # Callback for when sync stops (used for auto-switching to reading mode)
-        self._on_stop_callback: Optional[callable] = None
+        self._on_stop_callback: Optional[Callable] = None
 
-    def set_on_stop_callback(self, callback: callable):
+    def set_on_stop_callback(self, callback: Callable):
         """Set callback to be called when sync stops."""
         self._on_stop_callback = callback
 
@@ -57,17 +63,23 @@ class SyncController:
 
         # Build zone to channel mapping for entertainment streaming
         if self.entertainment_stream:
-            timed_print(f"Entertainment stream object exists, connected={self.entertainment_stream.is_connected()}")
+            timed_print(
+                f"Entertainment stream object exists, connected={self.entertainment_stream.is_connected()}"
+            )
             if self.entertainment_stream.is_connected():
                 self._build_zone_channel_mapping()
-                timed_print(f"Using entertainment streaming with {len(self._zone_channel_map)} zone-channel mappings")
+                timed_print(
+                    f"Using entertainment streaming with {len(self._zone_channel_map)} zone-channel mappings"
+                )
             else:
                 timed_print("Warning: Entertainment stream exists but not connected")
         else:
             timed_print("Warning: No entertainment stream configured")
 
         self.running = True
-        self.thread = threading.Thread(target=self._sync_loop, daemon=True, name="SyncLoop")
+        self.thread = threading.Thread(
+            target=self._sync_loop, daemon=True, name="SyncLoop"
+        )
         self.thread.start()
 
     def _build_zone_channel_mapping(self):
@@ -85,8 +97,8 @@ class SyncController:
         # Get all zone IDs for ambilight layout
         # top_0..top_n, left_0..left_n, right_0..right_n, bottom_0..bottom_n
         zones = []
-        for edge in ['top', 'bottom', 'left', 'right']:
-            if edge in ['top', 'bottom']:
+        for edge in ["top", "bottom", "left", "right"]:
+            if edge in ["top", "bottom"]:
                 count = self.zone_processor.cols
             else:
                 count = max(1, self.zone_processor.rows // 2)
@@ -99,12 +111,16 @@ class SyncController:
             if channel_id is not None:
                 self._zone_channel_map[zone_id] = channel_id
 
-        timed_print(f"Zone-channel mapping: {len(self._zone_channel_map)} zones mapped to {len(set(self._zone_channel_map.values()))} channels")
+        timed_print(
+            f"Zone-channel mapping: {len(self._zone_channel_map)} zones mapped to {len(set(self._zone_channel_map.values()))} channels"
+        )
 
-    def _find_best_channel_for_zone(self, zone_id: str, channel_positions: Dict[int, dict]) -> Optional[int]:
+    def _find_best_channel_for_zone(
+        self, zone_id: str, channel_positions: Dict[int, dict]
+    ) -> Optional[int]:
         """Find the best matching channel for a screen zone based on position."""
         try:
-            parts = zone_id.split('_')
+            parts = zone_id.split("_")
             if len(parts) == 2:
                 edge, idx_str = parts
                 idx = int(idx_str)
@@ -116,29 +132,45 @@ class SyncController:
 
         # Convert screen edge/index to expected position range
         # Entertainment positions: x is left(-1) to right(+1), z is bottom(-1) to top(+1)
-        if edge == 'left':
+        if edge == "left":
             target_x = -1.0
             # Left zones go from top (idx=0) to bottom (idx=n)
-            target_z = 1.0 - (idx * 2.0 / max(1, self.zone_processor.rows // 2 - 1)) if self.zone_processor.rows > 2 else 0
-        elif edge == 'right':
+            target_z = (
+                1.0 - (idx * 2.0 / max(1, self.zone_processor.rows // 2 - 1))
+                if self.zone_processor.rows > 2
+                else 0
+            )
+        elif edge == "right":
             target_x = 1.0
-            target_z = 1.0 - (idx * 2.0 / max(1, self.zone_processor.rows // 2 - 1)) if self.zone_processor.rows > 2 else 0
-        elif edge == 'top':
+            target_z = (
+                1.0 - (idx * 2.0 / max(1, self.zone_processor.rows // 2 - 1))
+                if self.zone_processor.rows > 2
+                else 0
+            )
+        elif edge == "top":
             target_z = 1.0
-            target_x = -1.0 + (idx * 2.0 / max(1, self.zone_processor.cols - 1)) if self.zone_processor.cols > 1 else 0
-        elif edge == 'bottom':
+            target_x = (
+                -1.0 + (idx * 2.0 / max(1, self.zone_processor.cols - 1))
+                if self.zone_processor.cols > 1
+                else 0
+            )
+        elif edge == "bottom":
             target_z = -1.0
-            target_x = -1.0 + (idx * 2.0 / max(1, self.zone_processor.cols - 1)) if self.zone_processor.cols > 1 else 0
+            target_x = (
+                -1.0 + (idx * 2.0 / max(1, self.zone_processor.cols - 1))
+                if self.zone_processor.cols > 1
+                else 0
+            )
         else:
             return list(channel_positions.keys())[0] if channel_positions else None
 
         # Find closest channel
         best_channel = None
-        best_distance = float('inf')
+        best_distance = float("inf")
 
         for channel_id, pos in channel_positions.items():
-            cx = pos.get('x', 0)
-            cz = pos.get('z', 0)
+            cx = pos.get("x", 0)
+            cz = pos.get("z", 0)
             distance = (cx - target_x) ** 2 + (cz - target_z) ** 2
             if distance < best_distance:
                 best_distance = distance
@@ -152,16 +184,16 @@ class SyncController:
             return
 
         self.running = False
-        
+
         if self.thread:
             self.thread.join(timeout=3)
             if self.thread.is_alive():
                 timed_print("Warning: Sync thread did not stop cleanly")
-        
+
         # Stop the capture pipeline to release portal session
-        if hasattr(self.capture, 'stop_pipeline'):
+        if hasattr(self.capture, "stop_pipeline"):
             self.capture.stop_pipeline()
-        
+
         # Call stop callback if set (for auto-switching to reading mode)
         if self._on_stop_callback:
             try:
@@ -176,7 +208,7 @@ class SyncController:
     def _sync_loop(self):
         """Main sync loop (runs in background thread)."""
         frame_times = []
-        
+
         while self.running:
             try:
                 start_time = time.time()
@@ -188,7 +220,7 @@ class SyncController:
 
                 # Enforce and clamp configured FPS to safe range (1-60)
                 try:
-                    fps_target = int(getattr(self.settings, 'fps', 30))
+                    fps_target = int(getattr(self.settings, "fps", 30))
                 except Exception:
                     fps_target = 30
 
@@ -207,27 +239,21 @@ class SyncController:
                     frame_times.pop(0)
 
                 avg_frame_time = sum(frame_times) / len(frame_times)
-                self._stats['fps'] = 1.0 / avg_frame_time if avg_frame_time > 0 else 0
-                self._stats['frame_count'] += 1
-
-                # Debug: occasionally log the effective target and measured FPS
-                if self._stats['frame_count'] % 100 == 0:
-                    timed_print(f"Sync target FPS={fps_target}, target_delay={target_delay:.4f}s, measured_fps={self._stats['fps']:.1f}")
+                self._stats["fps"] = 1.0 / avg_frame_time if avg_frame_time > 0 else 0
+                self._stats["frame_count"] += 1
 
             except KeyboardInterrupt:
                 break
             except Exception as e:
-                self._stats['errors'] += 1
+                self._stats["errors"] += 1
                 timed_print(f"Sync loop error: {e}")
-                self._queue_status('error', str(e), None)
+                self._queue_status("error", str(e), None)
                 time.sleep(1)
 
-        self._queue_status('status', 'stopped', None)
+        self._queue_status("status", "stopped", None)
 
     def _process_frame(self):
         """Process a single frame."""
-        import time
-
         t0 = time.time()
 
         t_capture = time.time()
@@ -250,8 +276,7 @@ class SyncController:
 
         t_smooth = time.time()
         smoothed_colors = self.color_analyzer.apply_smoothing(
-            hue_colors,
-            factor=self.settings.smoothing_factor
+            hue_colors, factor=self.settings.smoothing_factor
         )
         t_smooth = time.time() - t_smooth
 
@@ -263,30 +288,31 @@ class SyncController:
 
         # Record latest per-stage timings
         with self.lock:
-            self._stats['last_stage_times'] = {
-                'capture': round(t_capture, 4),
-                'zones': round(t_zones, 4),
-                'analyze': round(t_analyze, 4),
-                'smooth': round(t_smooth, 4),
-                'update': round(t_update, 4),
-                'total': round(total, 4)
+            self._stats["last_stage_times"] = {
+                "capture": round(t_capture, 4),
+                "zones": round(t_zones, 4),
+                "analyze": round(t_analyze, 4),
+                "smooth": round(t_smooth, 4),
+                "update": round(t_update, 4),
+                "total": round(total, 4),
             }
 
-        # Log periodic timing summary to help diagnose bottlenecks
-        if self._stats['frame_count'] % 30 == 0:
-            timed_print(f"[timings] capture={self._stats['last_stage_times']['capture']}s zones={self._stats['last_stage_times']['zones']}s analyze={self._stats['last_stage_times']['analyze']}s smooth={self._stats['last_stage_times']['smooth']}s update={self._stats['last_stage_times']['update']}s total={self._stats['last_stage_times']['total']}s")
-
         # Send RGB colors to GUI for preview, not XY colors
-        self._queue_status('status', 'syncing', zone_colors)
+        self._queue_status("status", "syncing", zone_colors)
 
     def _update_lights(self, hue_colors: Dict[str, Tuple[Tuple[float, float], int]]):
         """Send color updates via entertainment streaming."""
         if not hue_colors:
             return
 
-        if not self.entertainment_stream or not self.entertainment_stream.is_connected():
-            if self._stats['frame_count'] % 300 == 0:
-                timed_print("Warning: Entertainment stream not connected, skipping update")
+        if (
+            not self.entertainment_stream
+            or not self.entertainment_stream.is_connected()
+        ):
+            if self._stats["frame_count"] % 300 == 0:
+                timed_print(
+                    "Warning: Entertainment stream not connected, skipping update"
+                )
             return
 
         # Convert zone colors to channel colors
@@ -336,8 +362,8 @@ class SyncController:
         """Reset sync statistics."""
         with self.lock:
             self._stats = {
-                'fps': 0,
-                'frame_count': 0,
-                'errors': 0,
-                'last_update': time.time()
+                "fps": 0,
+                "frame_count": 0,
+                "errors": 0,
+                "last_update": time.time(),
             }

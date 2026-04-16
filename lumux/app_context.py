@@ -10,6 +10,7 @@ from lumux.entertainment import EntertainmentStream
 from lumux.sync import SyncController
 from lumux.zones import ZoneProcessor
 from lumux.mode_manager import ModeManager
+from lumux.utils.logging import timed_print
 
 
 @dataclass(frozen=True)
@@ -34,8 +35,7 @@ class AppContext:
         )
         self.zone_processor = ZoneProcessor(settings=settings.zones)
         self.color_analyzer = ColorAnalyzer(
-            brightness_scale=settings.sync.brightness_scale,
-            gamma=settings.sync.gamma
+            brightness_scale=settings.sync.brightness_scale, gamma=settings.sync.gamma
         )
         self.zone_mapping = settings.get_zone_mapping()
 
@@ -46,7 +46,7 @@ class AppContext:
                 bridge_ip=settings.hue.bridge_ip,
                 app_key=settings.hue.app_key,
                 client_key=settings.hue.client_key,
-                entertainment_config_id=settings.hue.entertainment_config_id
+                entertainment_config_id=settings.hue.entertainment_config_id,
             )
 
         self.sync_controller = SyncController(
@@ -56,7 +56,7 @@ class AppContext:
             color_analyzer=self.color_analyzer,
             zone_mapping=self.zone_mapping,
             settings=settings.sync,
-            entertainment_stream=self.entertainment_stream
+            entertainment_stream=self.entertainment_stream,
         )
 
         # Mode manager for video/reading mode switching
@@ -65,9 +65,9 @@ class AppContext:
             sync_controller=self.sync_controller,
             entertainment_stream=self.entertainment_stream,
             reading_mode=settings.reading_mode,
-            entertainment_config_id=settings.hue.entertainment_config_id
+            entertainment_config_id=settings.hue.entertainment_config_id,
         )
-        
+
         # Connect sync stop callback for auto-switching to reading mode
         self.sync_controller.set_on_stop_callback(
             self.mode_manager.on_video_sync_stopped
@@ -80,13 +80,15 @@ class AppContext:
     def start_entertainment(self) -> bool:
         """Connect to entertainment streaming zone."""
         if not self.entertainment_stream:
-            print("Entertainment stream not configured. Set client_key and entertainment_config_id.")
+            timed_print(
+                "Entertainment stream not configured. Set client_key and entertainment_config_id."
+            )
             return False
-        
+
         if not self.bridge.test_connection():
-            print("Bridge not connected. Connect to bridge first.")
+            timed_print("Bridge not connected. Connect to bridge first.")
             return False
-        
+
         return self.entertainment_stream.connect(self.bridge)
 
     def stop_entertainment(self):
@@ -96,7 +98,7 @@ class AppContext:
 
     def shutdown(self) -> None:
         """Stop background workers and any running sync, turning off lights."""
-        if hasattr(self, 'mode_manager'):
+        if hasattr(self, "mode_manager"):
             self.mode_manager.turn_off(turn_off_lights=True)
         else:
             # Fallback to manual cleanup
@@ -126,19 +128,16 @@ class AppContext:
         self.color_analyzer.gamma = self.settings.sync.gamma
 
         # Apply zone layout settings to the zone processor
-        try:
-            self.zone_processor.rows = int(self.settings.zones.rows)
-        except Exception:
-            self.zone_processor.rows = 16
-        try:
-            self.zone_processor.cols = int(self.settings.zones.cols)
-        except Exception:
-            self.zone_processor.cols = 16
+        self.zone_processor.rows = int(self.settings.zones.rows)
+        self.zone_processor.cols = int(self.settings.zones.cols)
 
         # Recreate entertainment stream if settings changed
         if hue.client_key and hue.entertainment_config_id:
-            if (self.entertainment_stream is None or 
-                self.entertainment_stream.entertainment_config_id != hue.entertainment_config_id):
+            if (
+                self.entertainment_stream is None
+                or self.entertainment_stream.entertainment_config_id
+                != hue.entertainment_config_id
+            ):
                 # Stop existing stream
                 self.stop_entertainment()
                 # Create new stream
@@ -146,13 +145,13 @@ class AppContext:
                     bridge_ip=hue.bridge_ip,
                     app_key=hue.app_key,
                     client_key=hue.client_key,
-                    entertainment_config_id=hue.entertainment_config_id
+                    entertainment_config_id=hue.entertainment_config_id,
                 )
                 # Update sync controller
                 self.sync_controller.entertainment_stream = self.entertainment_stream
 
         # Update mode manager reading settings
-        if hasattr(self, 'mode_manager'):
+        if hasattr(self, "mode_manager"):
             self.mode_manager.reading_settings = self.settings.reading_mode
 
     def get_bridge_status(self, attempt_connect: bool = False) -> BridgeStatus:
@@ -168,19 +167,21 @@ class AppContext:
         if connected and self.settings.hue.entertainment_config_id:
             configs = self.bridge.get_entertainment_configurations()
             for config in configs:
-                if config.get('id') == self.settings.hue.entertainment_config_id:
-                    entertainment_zone_name = config.get('name', '')
-                    entertainment_channel_count = len(config.get('channels', []))
+                if config.get("id") == self.settings.hue.entertainment_config_id:
+                    entertainment_zone_name = config.get("name", "")
+                    entertainment_channel_count = len(config.get("channels", []))
                     break
-        
-        entertainment_connected = (self.entertainment_stream is not None and 
-                                   self.entertainment_stream.is_connected())
-        
+
+        entertainment_connected = (
+            self.entertainment_stream is not None
+            and self.entertainment_stream.is_connected()
+        )
+
         return BridgeStatus(
             connected=connected,
             configured=configured,
             bridge_ip=self.settings.hue.bridge_ip,
             entertainment_zone_name=entertainment_zone_name,
             entertainment_channel_count=entertainment_channel_count,
-            entertainment_connected=entertainment_connected
+            entertainment_connected=entertainment_connected,
         )

@@ -17,46 +17,55 @@ import sys
 import subprocess
 import threading
 import json
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+from gi.repository import GLib
 from typing import Optional
 
 
 def _get_icon_path() -> str:
     """Get the app icon path, handling both development and installed scenarios.
-    
+
     Returns icon path suitable for the current environment (Flatpak or native).
     """
     # Flatpak installed location
-    flatpak_icon = "/app/share/icons/hicolor/scalable/apps/io.github.enginkirmaci.lumux.svg"
+    flatpak_icon = (
+        "/app/share/icons/hicolor/scalable/apps/io.github.enginkirmaci.lumux.svg"
+    )
     if os.path.exists(flatpak_icon):
         return flatpak_icon
-    
+
     # Development/native location (next to main.py)
     dev_icon = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "io.github.enginkirmaci.lumux.svg"
+        "io.github.enginkirmaci.lumux.svg",
     )
     if os.path.exists(dev_icon):
         return dev_icon
-    
+
     # Fallback to icon name (requires icon to be in theme)
     return "io.github.enginkirmaci.lumux"
 
+
 APP_ICON_PATH = _get_icon_path()
+
 
 class TrayIcon:
     """System tray icon with menu for Lumux application.
-    
+
     This implementation runs the tray icon in a separate process to avoid
     GTK3/GTK4 conflicts that arise when using AppIndicator3 with GTK4 apps.
-    
+
     Supports multiple tray backends:
     - D-Bus StatusNotifierItem (SNI) - Modern cross-desktop standard
     - AppIndicator3 / AyatanaAppIndicator3 - Fallback for Ubuntu/Unity
     """
-    
+
     def __init__(self, app, main_window):
         """Initialize tray icon.
-        
+
         Args:
             app: The main Adw.Application instance
             main_window: The MainWindow instance for callbacks
@@ -68,12 +77,12 @@ class TrayIcon:
         self._available = False
         self._is_syncing = False
         self._backend = None  # Will be set to 'sni', 'ayatana', or 'appindicator'
-        
+
         self._start_tray_process()
-    
+
     def _detect_tray_backend(self) -> Optional[str]:
         """Detect the best available tray backend.
-        
+
         Returns:
             Backend name ('sni', 'ayatana', 'appindicator') or None if unavailable
         """
@@ -102,7 +111,7 @@ print("none"); sys.exit(1)"""
                 [sys.executable, "-c", check_script],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
             )
             if result.returncode == 0:
                 return result.stdout.strip()
@@ -110,11 +119,11 @@ print("none"); sys.exit(1)"""
         except Exception as e:
             print(f"Note: Could not detect tray backend: {e}")
             return None
-    
+
     def _start_tray_process(self):
         """Start the tray icon subprocess."""
         backend = self._detect_tray_backend()
-        
+
         if not backend:
             print("Note: System tray not available.")
             print("For tray support, install one of:")
@@ -122,41 +131,40 @@ print("none"); sys.exit(1)"""
             print("  - gir1.2-ayatanaappindicator3-0.1 (Ubuntu/Debian)")
             print("  - libappindicator-gtk3 (Arch)")
             return
-        
+
         self._backend = backend
-        
+
         if backend == "sni":
             tray_script = self._generate_sni_script()
         else:
             tray_script = self._generate_appindicator_script(backend)
-        
+
         try:
             self._process = subprocess.Popen(
                 [sys.executable, "-c", tray_script],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=None, # Inherit stderr for debugging
+                stderr=None,  # Inherit stderr for debugging
                 text=True,
-                bufsize=1
+                bufsize=1,
             )
-            
+
             # Start listener thread
             self._listener_thread = threading.Thread(
-                target=self._listen_for_commands,
-                daemon=True
+                target=self._listen_for_commands, daemon=True
             )
             self._listener_thread.start()
-            
+
             self._available = True
             print(f"Tray icon started using {backend} backend")
-            
+
         except Exception as e:
             print(f"Warning: Could not start tray process: {e}")
             self._process = None
-    
+
     def _generate_sni_script(self) -> str:
         """Generate Python script for D-Bus StatusNotifierItem backend.
-        
+
         This implements the org.kde.StatusNotifierItem D-Bus interface directly,
         providing cross-desktop compatibility without GTK3 dependencies.
         """
@@ -302,14 +310,18 @@ if __name__ == "__main__":
     try: TrayApp().run()
     except: sys.exit(1)
 '''
-    
+
     def _generate_appindicator_script(self, indicator_type: str) -> str:
         """Generate Python script for AppIndicator backend.
-        
+
         This is the fallback for systems without SNI support but with AppIndicator.
         """
-        icon_value = APP_ICON_PATH if os.path.exists(APP_ICON_PATH) else "io.github.enginkirmaci.lumux"
-        
+        icon_value = (
+            APP_ICON_PATH
+            if os.path.exists(APP_ICON_PATH)
+            else "io.github.enginkirmaci.lumux"
+        )
+
         return f'''import sys, json, threading, gi
 gi.require_version('Gtk', '3.0')
 if "{indicator_type}" == "ayatana":
@@ -367,12 +379,12 @@ if __name__ == "__main__":
     TrayApp()
     Gtk.main()
 '''
-    
+
     def _listen_for_commands(self):
         """Listen for commands from the tray subprocess."""
         if not self._process or not self._process.stdout:
             return
-        
+
         try:
             for line in self._process.stdout:
                 line = line.strip()
@@ -385,28 +397,33 @@ if __name__ == "__main__":
                     pass
         except Exception:
             pass
-    
+
     def _handle_tray_command(self, cmd: dict):
         """Handle command from tray subprocess."""
-        from gi.repository import GLib
-        
-        def _show(): 
-            if self.main_window: self.main_window.present()
-        def _sync(): 
-            if self.main_window: self.main_window._on_sync_toggle(None)
-        def _settings(): 
-            if self.main_window: self.main_window.present(); self.main_window._on_settings_clicked(None)
-            
+
+        def _show():
+            if self.main_window:
+                self.main_window.present()
+
+        def _sync():
+            if self.main_window:
+                self.main_window._on_sync_toggle(None)
+
+        def _settings():
+            if self.main_window:
+                self.main_window.present()
+                self.main_window._on_settings_clicked(None)
+
         handlers = {
             "show": _show,
             "toggle_sync": _sync,
             "settings": _settings,
-            "quit": lambda: self.app.quit() if self.app else None
+            "quit": lambda: self.app.quit() if self.app else None,
         }
-        
+
         if handler := handlers.get(cmd.get("action")):
             GLib.idle_add(handler)
-    
+
     def _send_to_tray(self, cmd: dict):
         """Send command to tray subprocess."""
         if self._process and self._process.stdin:
@@ -415,26 +432,26 @@ if __name__ == "__main__":
                 self._process.stdin.flush()
             except Exception:
                 pass
-    
+
     def update_sync_status(self, is_syncing: bool):
         """Update the sync menu item label based on state.
-        
+
         Args:
             is_syncing: Whether sync is currently active
         """
         self._is_syncing = is_syncing
         self._send_to_tray({"action": "update_sync", "is_syncing": is_syncing})
-    
+
     @property
     def is_available(self) -> bool:
         """Check if tray icon is available."""
         return self._available
-    
+
     @property
     def backend(self) -> Optional[str]:
         """Get the active tray backend name."""
         return self._backend
-    
+
     def destroy(self):
         """Clean up the tray icon."""
         if self._process:
@@ -443,14 +460,14 @@ if __name__ == "__main__":
                 self._send_to_tray({"action": "quit"})
             except Exception:
                 pass
-            
+
             try:
                 # Close stdin to prevent BrokenPipeError
                 if self._process.stdin:
                     self._process.stdin.close()
             except Exception:
                 pass
-            
+
             try:
                 # Wait for graceful shutdown
                 self._process.wait(timeout=2)
@@ -464,6 +481,5 @@ if __name__ == "__main__":
                         self._process.kill()
                     except Exception:
                         pass
-            
-            self._process = None
 
+            self._process = None

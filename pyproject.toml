@@ -41,7 +41,7 @@ Issues = "https://github.com/enginkirmaci/lumux/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["lumux*", "gui*", "config*", "utils*"]
+include = ["lumux*", "gui*", "config*"]
 
 [tool.setuptools]
 py-modules = ["main"]

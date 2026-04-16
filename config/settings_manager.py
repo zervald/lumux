@@ -9,6 +9,8 @@ import sys
 import os
 import shlex
 
+from lumux.utils.logging import timed_print
+
 
 def is_running_in_flatpak() -> bool:
     """Return True when running inside a Flatpak sandbox."""
@@ -39,8 +41,8 @@ class ZoneSettings:
 
 @dataclass
 class SyncSettings:
-    fps: int = 15
-    transition_time_ms: int = 100
+    fps: int = 30
+    transition_time_ms: int = 50
     brightness_scale: float = 1.0
     gamma: float = 1.0
     smoothing_factor: float = 0.3
@@ -66,8 +68,12 @@ class ReadingModeSettings:
     color_xy: tuple = field(default_factory=lambda: (0.5, 0.4))  # Warm white default
     brightness: int = 150  # 0-254
     auto_activate: bool = True  # Auto-switch to reading mode when video sync stops
-    auto_activate_on_startup: bool = False  # Auto-switch to reading mode when app starts
-    light_ids: List[str] = field(default_factory=list)  # Explicit light IDs for reading mode (empty = auto)
+    auto_activate_on_startup: bool = (
+        False  # Auto-switch to reading mode when app starts
+    )
+    light_ids: List[str] = field(
+        default_factory=list
+    )  # Explicit light IDs for reading mode (empty = auto)
 
 
 @dataclass
@@ -82,9 +88,9 @@ class Settings:
 
 
 class SettingsManager:
-    _instance: Optional['SettingsManager'] = None
+    _instance: Optional["SettingsManager"] = None
 
-    def __new__(cls) -> 'SettingsManager':
+    def __new__(cls) -> "SettingsManager":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._init()
@@ -93,7 +99,7 @@ class SettingsManager:
     def _init(self):
         self._settings = Settings()
         self._config_dir = self._get_config_dir()
-        self._settings_file = self._config_dir / 'settings.json'
+        self._settings_file = self._config_dir / "settings.json"
         self._load_settings()
 
     def _get_config_dir(self) -> Path:
@@ -101,14 +107,14 @@ class SettingsManager:
         if is_running_in_flatpak():
             # In Flatpak, use XDG_CONFIG_HOME which is mapped to a persistent location
             # Usually: ~/.var/app/io.github.enginkirmaci.lumux/config/
-            xdg_config = os.environ.get('XDG_CONFIG_HOME')
+            xdg_config = os.environ.get("XDG_CONFIG_HOME")
             if xdg_config:
-                return Path(xdg_config) / 'lumux'
+                return Path(xdg_config) / "lumux"
         # Default: ~/.config/lumux
-        return Path.home() / '.config' / 'lumux'
+        return Path.home() / ".config" / "lumux"
 
     @classmethod
-    def get_instance(cls) -> 'SettingsManager':
+    def get_instance(cls) -> "SettingsManager":
         return cls()
 
     @property
@@ -118,7 +124,7 @@ class SettingsManager:
     @property
     def hue(self) -> HueSettings:
         return self._settings.hue
-
+    
     @property
     def capture(self) -> CaptureSettings:
         return self._settings.capture
@@ -148,36 +154,40 @@ class SettingsManager:
 
         Zone mappings are not persisted; mapping is regenerated on each sync start.
         """
-        
+
         return ZoneMapping()
 
     def _load_settings(self):
         """Load settings from config file."""
         if self._settings_file.exists():
             try:
-                with open(self._settings_file, 'r') as f:
+                with open(self._settings_file, "r") as f:
                     data = json.load(f)
-                
-                self._settings.hue = HueSettings(**data.get('hue', {}))
-                self._settings.capture = CaptureSettings(**data.get('capture', {}))
+
+                self._settings.hue = HueSettings(**data.get("hue", {}))
+                self._settings.capture = CaptureSettings(**data.get("capture", {}))
                 # Ensure we pass show_preview through when present
-                self._settings.zones = ZoneSettings(**data.get('zones', {}))
-                self._settings.sync = SyncSettings(**data.get('sync', {}))
+                self._settings.zones = ZoneSettings(**data.get("zones", {}))
+                self._settings.sync = SyncSettings(**data.get("sync", {}))
                 # UI settings (optional)
-                self._settings.ui = UISettings(**data.get('ui', {}))
+                self._settings.ui = UISettings(**data.get("ui", {}))
                 # Black bar settings (optional)
-                self._settings.black_bar = BlackBarSettings(**data.get('black_bar', {}))
+                self._settings.black_bar = BlackBarSettings(**data.get("black_bar", {}))
                 # Reading mode settings (optional)
-                reading_data = data.get('reading_mode', {})
+                reading_data = data.get("reading_mode", {})
                 # Handle tuple serialization for color_xy
-                if 'color_xy' in reading_data and isinstance(reading_data['color_xy'], list):
-                    reading_data['color_xy'] = tuple(reading_data['color_xy'])
+                if "color_xy" in reading_data and isinstance(
+                    reading_data["color_xy"], list
+                ):
+                    reading_data["color_xy"] = tuple(reading_data["color_xy"])
                 # Handle light_ids serialization (ensure it's a list)
-                if 'light_ids' in reading_data and not isinstance(reading_data['light_ids'], list):
-                    reading_data['light_ids'] = []
+                if "light_ids" in reading_data and not isinstance(
+                    reading_data["light_ids"], list
+                ):
+                    reading_data["light_ids"] = []
                 self._settings.reading_mode = ReadingModeSettings(**reading_data)
             except (json.JSONDecodeError, TypeError) as e:
-                print(f"Error loading settings: {e}")
+                timed_print(f"Error loading settings: {e}")
                 self._validate_settings()
 
         self._ensure_config_dir()
@@ -189,112 +199,84 @@ class SettingsManager:
         self._validate_settings()
 
         data = {
-            'hue': asdict(self._settings.hue),
-            'capture': asdict(self._settings.capture),
-            'zones': asdict(self._settings.zones),
-            'sync': asdict(self._settings.sync),
-            'ui': asdict(self._settings.ui),
-            'black_bar': asdict(self._settings.black_bar),
-            'reading_mode': asdict(self._settings.reading_mode)
+            "hue": asdict(self._settings.hue),
+            "capture": asdict(self._settings.capture),
+            "zones": asdict(self._settings.zones),
+            "sync": asdict(self._settings.sync),
+            "ui": asdict(self._settings.ui),
+            "black_bar": asdict(self._settings.black_bar),
+            "reading_mode": asdict(self._settings.reading_mode),
         }
 
-        with open(self._settings_file, 'w') as f:
+        with open(self._settings_file, "w") as f:
             json.dump(data, f, indent=2)
 
     def _validate_settings(self):
         """Validate and clamp settings to valid ranges."""
-        self._settings.capture.scale_factor = max(0.01, min(1.0, self._settings.capture.scale_factor))
+        self._settings.capture.scale_factor = max(
+            0.01, min(1.0, self._settings.capture.scale_factor)
+        )
         if self._settings.capture.source_type not in ("screen", "window"):
             self._settings.capture.source_type = "screen"
         self._settings.sync.fps = max(1, min(60, self._settings.sync.fps))
-        self._settings.sync.transition_time_ms = max(0, min(1000, self._settings.sync.transition_time_ms))
-        self._settings.sync.brightness_scale = max(0.0, min(2.0, self._settings.sync.brightness_scale))
+        self._settings.sync.transition_time_ms = max(
+            0, min(1000, self._settings.sync.transition_time_ms)
+        )
+        self._settings.sync.brightness_scale = max(
+            0.0, min(2.0, self._settings.sync.brightness_scale)
+        )
         self._settings.sync.gamma = max(0.1, min(3.0, self._settings.sync.gamma))
-        self._settings.sync.smoothing_factor = max(0.1, min(1.0, self._settings.sync.smoothing_factor))
+        self._settings.sync.smoothing_factor = max(
+            0.1, min(1.0, self._settings.sync.smoothing_factor)
+        )
         # Zone grid size bounds
-        try:
-            self._settings.zones.rows = int(self._settings.zones.rows)
-        except Exception:
-            self._settings.zones.rows = 16
-        try:
-            self._settings.zones.cols = int(self._settings.zones.cols)
-        except Exception:
-            self._settings.zones.cols = 16
+        self._settings.zones.rows = max(1, min(64, int(self._settings.zones.rows)))
+        self._settings.zones.cols = max(1, min(64, int(self._settings.zones.cols)))
 
-        self._settings.zones.rows = max(1, min(64, self._settings.zones.rows))
-        self._settings.zones.cols = max(1, min(64, self._settings.zones.cols))
+        self._settings.ui.start_at_startup = bool(self._settings.ui.start_at_startup)
+        self._settings.ui.minimize_to_tray_on_sync = bool(
+            self._settings.ui.minimize_to_tray_on_sync
+        )
+        self._settings.ui.minimize_at_startup = bool(
+            self._settings.ui.minimize_at_startup
+        )
 
-        # UI settings validation
-        try:
-            self._settings.ui.start_at_startup = bool(self._settings.ui.start_at_startup)
-        except Exception:
-            self._settings.ui.start_at_startup = False
-        try:
-            self._settings.ui.minimize_to_tray_on_sync = bool(self._settings.ui.minimize_to_tray_on_sync)
-        except Exception:
-            self._settings.ui.minimize_to_tray_on_sync = False
-        try:
-            self._settings.ui.minimize_at_startup = bool(self._settings.ui.minimize_at_startup)
-        except Exception:
-            self._settings.ui.minimize_at_startup = False
+        self._settings.black_bar.enabled = bool(self._settings.black_bar.enabled)
+        self._settings.black_bar.threshold = max(
+            0, min(50, int(self._settings.black_bar.threshold))
+        )
+        self._settings.black_bar.detection_rate = max(
+            1, min(120, int(self._settings.black_bar.detection_rate))
+        )
+        self._settings.black_bar.smooth_factor = max(
+            0.1, min(1.0, float(self._settings.black_bar.smooth_factor))
+        )
 
-        # Black bar settings validation
-        try:
-            self._settings.black_bar.enabled = bool(self._settings.black_bar.enabled)
-        except Exception:
-            self._settings.black_bar.enabled = False
-        try:
-            self._settings.black_bar.threshold = int(self._settings.black_bar.threshold)
-        except Exception:
-            self._settings.black_bar.threshold = 10
-        try:
-            self._settings.black_bar.detection_rate = int(self._settings.black_bar.detection_rate)
-        except Exception:
-            self._settings.black_bar.detection_rate = 30
-        try:
-            self._settings.black_bar.smooth_factor = float(self._settings.black_bar.smooth_factor)
-        except Exception:
-            self._settings.black_bar.smooth_factor = 0.3
-
-        self._settings.black_bar.threshold = max(0, min(50, self._settings.black_bar.threshold))
-        self._settings.black_bar.detection_rate = max(1, min(120, self._settings.black_bar.detection_rate))
-        self._settings.black_bar.smooth_factor = max(0.1, min(1.0, self._settings.black_bar.smooth_factor))
-
-        # Reading mode settings validation
-        try:
-            if isinstance(self._settings.reading_mode.color_xy, (list, tuple)) and len(self._settings.reading_mode.color_xy) == 2:
-                x, y = self._settings.reading_mode.color_xy
-                self._settings.reading_mode.color_xy = (float(x), float(y))
-            else:
-                self._settings.reading_mode.color_xy = (0.5, 0.4)
-        except Exception:
+        if (
+            isinstance(self._settings.reading_mode.color_xy, (list, tuple))
+            and len(self._settings.reading_mode.color_xy) == 2
+        ):
+            x, y = self._settings.reading_mode.color_xy
+            self._settings.reading_mode.color_xy = (float(x), float(y))
+        else:
             self._settings.reading_mode.color_xy = (0.5, 0.4)
-        
-        # Clamp XY to valid CIE color space range
+
         x, y = self._settings.reading_mode.color_xy
-        self._settings.reading_mode.color_xy = (max(0.0, min(1.0, x)), max(0.0, min(1.0, y)))
-        
-        try:
-            self._settings.reading_mode.brightness = int(self._settings.reading_mode.brightness)
-        except Exception:
-            self._settings.reading_mode.brightness = 150
-        self._settings.reading_mode.brightness = max(0, min(254, self._settings.reading_mode.brightness))
-        
-        try:
-            self._settings.reading_mode.auto_activate = bool(self._settings.reading_mode.auto_activate)
-        except Exception:
-            self._settings.reading_mode.auto_activate = True
-        
-        try:
-            self._settings.reading_mode.auto_activate_on_startup = bool(self._settings.reading_mode.auto_activate_on_startup)
-        except Exception:
-            self._settings.reading_mode.auto_activate_on_startup = False
-        
-        # Validate light_ids is a list
-        try:
-            if not isinstance(self._settings.reading_mode.light_ids, list):
-                self._settings.reading_mode.light_ids = []
-        except Exception:
+        self._settings.reading_mode.color_xy = (
+            max(0.0, min(1.0, x)),
+            max(0.0, min(1.0, y)),
+        )
+
+        self._settings.reading_mode.brightness = max(
+            0, min(254, int(self._settings.reading_mode.brightness))
+        )
+        self._settings.reading_mode.auto_activate = bool(
+            self._settings.reading_mode.auto_activate
+        )
+        self._settings.reading_mode.auto_activate_on_startup = bool(
+            self._settings.reading_mode.auto_activate_on_startup
+        )
+        if not isinstance(self._settings.reading_mode.light_ids, list):
             self._settings.reading_mode.light_ids = []
 
     def _ensure_config_dir(self):
@@ -304,14 +286,23 @@ class SettingsManager:
     def enable_autostart(self):
         """Enable autostart by creating .desktop file in autostart directory."""
         return self._enable_autostart_file()
-    
+
     def _get_autostart_path(self) -> Path:
         """Get the autostart .desktop file path, respecting Flatpak sandbox."""
         if is_running_in_flatpak():
-            xdg_config = os.environ.get('XDG_CONFIG_HOME', '')
+            xdg_config = os.environ.get("XDG_CONFIG_HOME", "")
             if xdg_config:
-                return Path(xdg_config) / 'autostart' / 'io.github.enginkirmaci.lumux.desktop'
-        return Path.home() / '.config' / 'autostart' / 'io.github.enginkirmaci.lumux.desktop'
+                return (
+                    Path(xdg_config)
+                    / "autostart"
+                    / "io.github.enginkirmaci.lumux.desktop"
+                )
+        return (
+            Path.home()
+            / ".config"
+            / "autostart"
+            / "io.github.enginkirmaci.lumux.desktop"
+        )
 
     def _enable_autostart_file(self) -> bool:
         """Enable autostart by writing .desktop file."""
@@ -324,7 +315,7 @@ class SettingsManager:
         else:
             try:
                 exe = shlex.quote(sys.executable)
-                script = os.path.abspath(sys.argv[0]) if len(sys.argv) > 0 else ''
+                script = os.path.abspath(sys.argv[0]) if len(sys.argv) > 0 else ""
                 if script:
                     exec_cmd = f"{exe} {shlex.quote(script)}"
                 else:
@@ -344,24 +335,28 @@ NoDisplay=false
 
         try:
             autostart_dir.mkdir(parents=True, exist_ok=True)
-            with open(desktop_path, 'w') as f:
+            with open(desktop_path, "w") as f:
                 f.write(content)
-            
+
             # Verify the file was actually written (catches sandboxed Flatpak case)
             if not desktop_path.exists():
-                raise PermissionError("File was not created. Flatpak may need filesystem=host permission.")
-            
+                raise PermissionError(
+                    "File was not created. Flatpak may need filesystem=host permission."
+                )
+
             return True
         except PermissionError:
-            raise PermissionError("Cannot write to autostart directory. Flatpak needs filesystem=host permission.")
+            raise PermissionError(
+                "Cannot write to autostart directory. Flatpak needs filesystem=host permission."
+            )
         except Exception as e:
-            print(f"Failed to write autostart file: {e}")
+            timed_print(f"Failed to write autostart file: {e}")
             return False
 
     def disable_autostart(self):
         """Disable autostart by removing .desktop file."""
         return self._disable_autostart_file()
-    
+
     def _disable_autostart_file(self) -> bool:
         """Disable autostart by removing .desktop file."""
         desktop_path = self._get_autostart_path()
@@ -370,7 +365,7 @@ NoDisplay=false
                 desktop_path.unlink()
             return True
         except Exception as e:
-            print(f"Failed to remove autostart file: {e}")
+            timed_print(f"Failed to remove autostart file: {e}")
             return False
 
     def is_autostart_enabled(self) -> bool:
@@ -379,7 +374,7 @@ NoDisplay=false
 
     def get_autostart_status(self) -> tuple[bool, str]:
         """Get autostart status and a message explaining the current state.
-        
+
         Returns:
             Tuple of (is_enabled, status_message)
         """

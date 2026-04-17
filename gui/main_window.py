@@ -684,7 +684,12 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _check_bridge_connection(self):
         """Check if bridge is connected and update UI accordingly."""
-        status = self.app_context.get_bridge_status(attempt_connect=True)
+        self.app_context.get_bridge_status_async(
+            self._on_bridge_status_received, attempt_connect=True
+        )
+
+    def _on_bridge_status_received(self, status):
+        """Handle bridge status result from background thread."""
         self.bridge_connected = status.connected
         # Determine visibility and texts based on connection/configuration
         if self.bridge_connected:

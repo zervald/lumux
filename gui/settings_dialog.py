@@ -425,7 +425,12 @@ class SettingsDialog(Adw.PreferencesDialog):
 
     def _update_bridge_status(self):
         """Update bridge connection status display."""
-        status = self.app_context.get_bridge_status(attempt_connect=True)
+        self.app_context.get_bridge_status_async(
+            self._on_bridge_status_received, attempt_connect=True
+        )
+
+    def _on_bridge_status_received(self, status):
+        """Handle bridge status result from background thread."""
         if status.connected:
             self.status_row.set_subtitle("Connected")
             self.status_icon.set_from_icon_name("network-transmit-receive-symbolic")

@@ -1,5 +1,6 @@
 """Application wiring and shared services."""
 
+import threading
 from dataclasses import dataclass
 
 from config.settings_manager import SettingsManager
@@ -39,7 +40,6 @@ class AppContext:
         )
         self.zone_mapping = settings.get_zone_mapping()
 
-        # Entertainment streaming (replaces REST-based light updates)
         self.entertainment_stream = None
         if settings.hue.client_key and settings.hue.entertainment_config_id:
             self.entertainment_stream = EntertainmentStream(
@@ -59,7 +59,6 @@ class AppContext:
             entertainment_stream=self.entertainment_stream,
         )
 
-        # Mode manager for video/reading mode switching
         self.mode_manager = ModeManager(
             bridge=self.bridge,
             sync_controller=self.sync_controller,
@@ -68,10 +67,11 @@ class AppContext:
             entertainment_config_id=settings.hue.entertainment_config_id,
         )
 
-        # Connect sync stop callback for auto-switching to reading mode
         self.sync_controller.set_on_stop_callback(
             self.mode_manager.on_video_sync_stopped
         )
+
+        self._settings_lock = threading.Lock()
 
     def start(self) -> BridgeStatus:
         """Start background workers and attempt bridge connection."""
@@ -101,7 +101,6 @@ class AppContext:
         if hasattr(self, "mode_manager"):
             self.mode_manager.turn_off(turn_off_lights=True)
         else:
-            # Fallback to manual cleanup
             try:
                 if self.sync_controller.is_running():
                     self.sync_controller.stop()
@@ -109,50 +108,50 @@ class AppContext:
                 self.stop_entertainment()
 
     def apply_settings(self) -> None:
-        """Apply current settings to live components."""
-        hue = self.settings.hue
-        if (self.bridge.bridge_ip, self.bridge.app_key) != (hue.bridge_ip, hue.app_key):
-            self.bridge.bridge_ip = hue.bridge_ip
-            self.bridge.app_key = hue.app_key
-            self.bridge.hue = None
-            self.bridge.bridge = None
-
-        capture = self.settings.capture
-        self.capture.scale_factor = capture.scale_factor
-        self.capture.source_type = capture.source_type
-
-        # Update black bar detector settings
-        self.capture.update_black_bar_settings(self.settings.black_bar)
-
-        self.color_analyzer.brightness_scale = self.settings.sync.brightness_scale
-        self.color_analyzer.gamma = self.settings.sync.gamma
-
-        # Apply zone layout settings to the zone processor
-        self.zone_processor.rows = int(self.settings.zones.rows)
-        self.zone_processor.cols = int(self.settings.zones.cols)
-
-        # Recreate entertainment stream if settings changed
-        if hue.client_key and hue.entertainment_config_id:
-            if (
-                self.entertainment_stream is None
-                or self.entertainment_stream.entertainment_config_id
-                != hue.entertainment_config_id
+        """Apply current settings to live components atomically."""
+        with self._settings_lock:
+            hue = self.settings.hue
+            if (self.bridge.bridge_ip, self.bridge.app_key) != (
+                hue.bridge_ip,
+                hue.app_key,
             ):
-                # Stop existing stream
-                self.stop_entertainment()
-                # Create new stream
-                self.entertainment_stream = EntertainmentStream(
-                    bridge_ip=hue.bridge_ip,
-                    app_key=hue.app_key,
-                    client_key=hue.client_key,
-                    entertainment_config_id=hue.entertainment_config_id,
-                )
-                # Update sync controller
-                self.sync_controller.entertainment_stream = self.entertainment_stream
+                self.bridge.bridge_ip = hue.bridge_ip
+                self.bridge.app_key = hue.app_key
+                self.bridge.hue = None
+                self.bridge.bridge = None
 
-        # Update mode manager reading settings
-        if hasattr(self, "mode_manager"):
-            self.mode_manager.reading_settings = self.settings.reading_mode
+            capture = self.settings.capture
+            self.capture.scale_factor = capture.scale_factor
+            self.capture.source_type = capture.source_type
+
+            self.capture.update_black_bar_settings(self.settings.black_bar)
+
+            self.color_analyzer.brightness_scale = self.settings.sync.brightness_scale
+            self.color_analyzer.gamma = self.settings.sync.gamma
+
+            self.zone_processor.rows = int(self.settings.zones.rows)
+            self.zone_processor.cols = int(self.settings.zones.cols)
+            self.zone_processor._rebuild_zone_ids()
+
+            if hue.client_key and hue.entertainment_config_id:
+                if (
+                    self.entertainment_stream is None
+                    or self.entertainment_stream.entertainment_config_id
+                    != hue.entertainment_config_id
+                ):
+                    self.stop_entertainment()
+                    self.entertainment_stream = EntertainmentStream(
+                        bridge_ip=hue.bridge_ip,
+                        app_key=hue.app_key,
+                        client_key=hue.client_key,
+                        entertainment_config_id=hue.entertainment_config_id,
+                    )
+                    self.sync_controller.entertainment_stream = (
+                        self.entertainment_stream
+                    )
+
+            if hasattr(self, "mode_manager"):
+                self.mode_manager.reading_settings = self.settings.reading_mode
 
     def get_bridge_status(self, attempt_connect: bool = False) -> BridgeStatus:
         """Return current bridge status, optionally attempting a connection."""
@@ -185,3 +184,33 @@ class AppContext:
             entertainment_channel_count=entertainment_channel_count,
             entertainment_connected=entertainment_connected,
         )
+
+    def get_bridge_status_async(self, callback, attempt_connect: bool = False):
+        """Fetch bridge status in a background thread and deliver via callback.
+
+        Args:
+            callback: Function to call with BridgeStatus result
+            attempt_connect: Whether to attempt connection if not connected
+        """
+
+        def _worker():
+            try:
+                status = self.get_bridge_status(attempt_connect=attempt_connect)
+            except Exception as e:
+                timed_print(f"Error getting bridge status: {e}")
+                status = BridgeStatus(
+                    connected=False,
+                    configured=bool(
+                        self.settings.hue.bridge_ip and self.settings.hue.app_key
+                    ),
+                    bridge_ip=self.settings.hue.bridge_ip,
+                )
+            try:
+                from gi.repository import GLib
+
+                GLib.idle_add(callback, status)
+            except Exception:
+                callback(status)
+
+        thread = threading.Thread(target=_worker, daemon=True)
+        thread.start()

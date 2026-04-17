@@ -15,6 +15,7 @@ class ZonePreviewWidget(Gtk.DrawingArea):
         self.rows = rows
         self.cols = cols
         self.zone_colors: dict = {}
+        self._prev_zone_colors: dict = {}
         self._cell_gap = 2
 
         self.set_size_request(400, 300)
@@ -33,11 +34,14 @@ class ZonePreviewWidget(Gtk.DrawingArea):
         self.queue_draw()
 
     def update_colors(self, zone_colors: dict):
-        """Update zone colors and redraw.
+        """Update zone colors and redraw only if colors changed.
 
         Args:
             zone_colors: Dictionary mapping zone IDs to RGB tuples
         """
+        if zone_colors == self._prev_zone_colors:
+            return
+        self._prev_zone_colors = zone_colors.copy()
         self.zone_colors = zone_colors
         self.queue_draw()
 

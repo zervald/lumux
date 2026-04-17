@@ -259,7 +259,7 @@ class SyncController:
         t_capture = time.time()
         screen = self.capture.capture()
         t_capture = time.time() - t_capture
-        if not screen:
+        if screen is None:
             return
 
         t_zones = time.time()

@@ -38,15 +38,55 @@ class ScreenCapture:
         self._pipeline: Optional[Gst.Pipeline] = None
         self._appsink: Optional[GstApp.AppSink] = None
         self._latest_frame: Optional[np.ndarray] = None
+        self._latest_frame_data: Optional[bytes] = None
         self._frame_lock = threading.Lock()
         self._pipeline_running = False
         self._pipeline_error_logged = False
+
+        self._source_width: Optional[int] = None
+        self._source_height: Optional[int] = None
+        self._pipeline_scaled = False
+        self._needs_pipeline_restart = False
 
         self._black_bar_detector: Optional[BlackBarDetector] = None
         if black_bar_settings is not None:
             self._init_black_bar_detector(black_bar_settings)
 
         self._init_display()
+
+    def _compute_scaled_dimensions(self):
+        if self._source_width and self._source_height and self.scale_factor < 1.0:
+            w = max(1, int(self._source_width * self.scale_factor))
+            h = max(1, int(self._source_height * self.scale_factor))
+            return w, h
+        return None, None
+
+    def update_scale_factor(self, new_scale: float) -> None:
+        new_scale = max(0.01, min(1.0, new_scale))
+        changed = abs(new_scale - self.scale_factor) > 0.001
+        self.scale_factor = new_scale
+        if changed and self._pipeline_running:
+            target_w, target_h = self._compute_scaled_dimensions()
+            scaled_changed = target_w != getattr(
+                self, "_scaled_w", None
+            ) or target_h != getattr(self, "_scaled_h", None)
+            if scaled_changed:
+                self._restart_pipeline()
+
+    def _stop_gst_pipeline(self) -> None:
+        if self._pipeline:
+            self._pipeline.set_state(Gst.State.NULL)
+            self._pipeline = None
+            self._appsink = None
+        self._pipeline_running = False
+        self._latest_frame = None
+        self._latest_frame_data = None
+
+    def _restart_pipeline(self) -> None:
+        self._needs_pipeline_restart = False
+        self._stop_gst_pipeline()
+        if self._portal_node_id:
+            self._start_pipeline()
 
     def _init_black_bar_detector(self, settings: "BlackBarSettings") -> None:
         self._black_bar_detector = BlackBarDetector(
@@ -79,6 +119,11 @@ class ScreenCapture:
             print(f"Error initializing display: {e}")
 
     def capture(self) -> Optional[np.ndarray]:
+        if self._needs_pipeline_restart and self._pipeline_running:
+            self._restart_pipeline()
+            if not self._pipeline_running:
+                return None
+
         if self._pipeline_running:
             with self._frame_lock:
                 frame = self._latest_frame
@@ -125,7 +170,7 @@ class ScreenCapture:
         if screen is None or screen.size == 0:
             return screen
 
-        if self.scale_factor < 1.0:
+        if not self._pipeline_scaled and self.scale_factor < 1.0:
             import PIL.Image as Image
 
             new_h = max(1, int(screen.shape[0] * self.scale_factor))
@@ -246,41 +291,73 @@ class ScreenCapture:
     def _get_pipeline_configs(self, node_id: int) -> List[str]:
         configs = []
 
+        target_w, target_h = self._compute_scaled_dimensions()
+
         has_glupload = Gst.ElementFactory.find("glupload") is not None
         has_glcolorconvert = Gst.ElementFactory.find("glcolorconvert") is not None
         has_gldownload = Gst.ElementFactory.find("gldownload") is not None
         has_glcolorscale = Gst.ElementFactory.find("glcolorscale") is not None
+        has_videoscale = Gst.ElementFactory.find("videoscale") is not None
+        has_v4l2convert = Gst.ElementFactory.find("v4l2convert") is not None
+        has_videoconvert = Gst.ElementFactory.find("videoconvert") is not None
+
+        sink_props = "name=sink emit-signals=true drop=true max-buffers=1 sync=false"
+        src = f"pipewiresrc path={node_id} do-timestamp=true"
+
+        if target_w and target_h:
+            scaled_caps = f"video/x-raw,format=RGB,width={target_w},height={target_h}"
+
+            if has_glupload and has_glcolorconvert and has_gldownload:
+                if has_glcolorscale:
+                    configs.append(
+                        f"{src} ! "
+                        f"glupload ! glcolorconvert ! glcolorscale ! "
+                        f"gldownload ! videoscale ! {scaled_caps} ! "
+                        f"appsink {sink_props}"
+                    )
+                if has_videoscale:
+                    configs.append(
+                        f"{src} ! "
+                        f"glupload ! glcolorconvert ! gldownload ! videoscale ! "
+                        f"{scaled_caps} ! appsink {sink_props}"
+                    )
+
+            if has_v4l2convert and has_videoscale:
+                configs.append(
+                    f"{src} ! v4l2convert ! videoscale ! {scaled_caps} ! "
+                    f"appsink {sink_props}"
+                )
+
+            if has_videoconvert and has_videoscale:
+                configs.append(
+                    f"{src} ! videoconvert ! videoscale ! {scaled_caps} ! "
+                    f"appsink {sink_props}"
+                )
 
         if has_glupload and has_glcolorconvert and has_gldownload:
             configs.append(
-                f"pipewiresrc path={node_id} do-timestamp=true ! "
+                f"{src} ! "
                 f"glupload ! glcolorconvert ! gldownload ! "
                 f"video/x-raw,format=RGB ! "
-                f"appsink name=sink emit-signals=true drop=true max-buffers=1 sync=false"
+                f"appsink {sink_props}"
             )
 
         if has_glupload and has_glcolorscale and has_gldownload:
             configs.append(
-                f"pipewiresrc path={node_id} do-timestamp=true ! "
+                f"{src} ! "
                 f"glupload ! glcolorscale ! gldownload ! "
                 f"video/x-raw,format=RGB ! "
-                f"appsink name=sink emit-signals=true drop=true max-buffers=1 sync=false"
+                f"appsink {sink_props}"
             )
 
-        if Gst.ElementFactory.find("v4l2convert"):
+        if has_v4l2convert:
             configs.append(
-                f"pipewiresrc path={node_id} do-timestamp=true ! "
-                f"v4l2convert ! "
-                f"video/x-raw,format=RGB ! "
-                f"appsink name=sink emit-signals=true drop=true max-buffers=1 sync=false"
+                f"{src} ! v4l2convert ! video/x-raw,format=RGB ! appsink {sink_props}"
             )
 
-        if Gst.ElementFactory.find("videoconvert"):
+        if has_videoconvert:
             configs.append(
-                f"pipewiresrc path={node_id} do-timestamp=true ! "
-                f"videoconvert ! "
-                f"video/x-raw,format=RGB ! "
-                f"appsink name=sink emit-signals=true drop=true max-buffers=1 sync=false"
+                f"{src} ! videoconvert ! video/x-raw,format=RGB ! appsink {sink_props}"
             )
 
         return configs
@@ -295,6 +372,8 @@ class ScreenCapture:
             print("Need one of: glupload+glcolorconvert, v4l2convert, or videoconvert")
             self._log_pipeline_details()
             return False
+
+        target_w, target_h = self._compute_scaled_dimensions()
 
         for i, pipeline_str in enumerate(configs):
             try:
@@ -320,12 +399,24 @@ class ScreenCapture:
                     self._pipeline = None
                     continue
 
+                uses_scaled_caps = (
+                    target_w is not None and f"width={target_w}" in pipeline_str
+                )
+                self._pipeline_scaled = uses_scaled_caps
+                self._scaled_w = target_w
+                self._scaled_h = target_h
+
                 self._pipeline_running = True
                 self._pipeline_error_logged = False
                 desc = (
                     pipeline_str.split(" ! ")[1] if " ! " in pipeline_str else "unknown"
                 )
-                print(f"GStreamer capture pipeline started (converter: {desc})")
+                scale_info = (
+                    f", scaled to {target_w}x{target_h}" if uses_scaled_caps else ""
+                )
+                print(
+                    f"GStreamer capture pipeline started (converter: {desc}{scale_info})"
+                )
                 return True
 
             except Exception as e:
@@ -335,6 +426,7 @@ class ScreenCapture:
                     self._pipeline = None
                 continue
 
+        self._pipeline_scaled = False
         print("All pipeline configurations failed")
         self._log_pipeline_details()
         return False
@@ -366,6 +458,7 @@ class ScreenCapture:
             plugins = {
                 "pipewiresrc": Gst.ElementFactory.find("pipewiresrc") is not None,
                 "videoconvert": Gst.ElementFactory.find("videoconvert") is not None,
+                "videoscale": Gst.ElementFactory.find("videoscale") is not None,
                 "v4l2convert": Gst.ElementFactory.find("v4l2convert") is not None,
                 "glupload": Gst.ElementFactory.find("glupload") is not None,
                 "glcolorconvert": Gst.ElementFactory.find("glcolorconvert") is not None,
@@ -390,6 +483,14 @@ class ScreenCapture:
             height = struct.get_value("height")
             fmt = struct.get_value("format") if struct.has_field("format") else None
 
+            if not self._pipeline_scaled and (
+                self._source_width != width or self._source_height != height
+            ):
+                self._source_width = width
+                self._source_height = height
+                if self.scale_factor < 1.0:
+                    self._needs_pipeline_restart = True
+
             success, map_info = buffer.map(Gst.MapFlags.READ)
             if not success:
                 print(f"Failed to map buffer (format={fmt}, {width}x{height})")
@@ -401,10 +502,8 @@ class ScreenCapture:
                 data = bytes(map_info.data)
 
                 if fmt == "RGB":
-                    frame = (
-                        np.frombuffer(data, dtype=np.uint8)
-                        .reshape((height, width, 3))
-                        .copy()
+                    frame = np.frombuffer(data, dtype=np.uint8).reshape(
+                        (height, width, 3)
                     )
                 elif fmt == "BGR":
                     frame = (
@@ -413,15 +512,13 @@ class ScreenCapture:
                         .copy()
                     )
                 elif fmt in ("RGBA", "RGBx"):
-                    frame = (
-                        np.frombuffer(data, dtype=np.uint8)
-                        .reshape((height, width, 4))[:, :, :3]
-                        .copy()
+                    frame = np.frombuffer(data, dtype=np.uint8).reshape(
+                        (height, width, 4)
                     )
                 elif fmt in ("BGRA", "BGRx"):
                     frame = (
                         np.frombuffer(data, dtype=np.uint8)
-                        .reshape((height, width, 4))[:, :, [2, 1, 0]]
+                        .reshape((height, width, 4))[:, :, [2, 1, 0, 3]]
                         .copy()
                     )
                 elif fmt == "BGR15" or fmt == "RGB15":
@@ -431,14 +528,13 @@ class ScreenCapture:
                     b = (arr & 0x1F).astype(np.uint8) * 255 // 31
                     frame = np.stack([r, g, b], axis=2)
                 else:
-                    frame = (
-                        np.frombuffer(data, dtype=np.uint8)
-                        .reshape((height, width, 3))
-                        .copy()
+                    frame = np.frombuffer(data, dtype=np.uint8).reshape(
+                        (height, width, 3)
                     )
 
                 with self._frame_lock:
                     self._latest_frame = frame
+                    self._latest_frame_data = data
 
             finally:
                 buffer.unmap(map_info)
@@ -464,14 +560,13 @@ class ScreenCapture:
         self._portal_bus = None
 
     def stop_pipeline(self):
-        if self._pipeline:
-            self._pipeline.set_state(Gst.State.NULL)
-            self._pipeline = None
-            self._appsink = None
-            self._pipeline_running = False
-            self._latest_frame = None
-            self._portal_node_id = None
-            print("GStreamer pipeline stopped")
+        self._stop_gst_pipeline()
+        self._source_width = None
+        self._source_height = None
+        self._pipeline_scaled = False
+        self._needs_pipeline_restart = False
+        self._portal_node_id = None
+        print("GStreamer pipeline stopped")
         self._close_portal_session()
 
     def __del__(self):

@@ -121,7 +121,7 @@ class AppContext:
                 self.bridge.bridge = None
 
             capture = self.settings.capture
-            self.capture.scale_factor = capture.scale_factor
+            self.capture.update_scale_factor(capture.scale_factor)
             self.capture.source_type = capture.source_type
 
             self.capture.update_black_bar_settings(self.settings.black_bar)

@@ -1,0 +1,41 @@
+{
+  lib,
+  python3Packages,
+  fetchgit,
+}:
+let
+  url = "https://github.com/enginkirmaci/lumux";
+  version = "0.6.0";
+in
+
+python3Packages.buildPythonApplication rec {
+  pname = "lumux";
+  inherit version;
+  pyproject = true;
+
+  src = fetchgit {
+    url = "${url}.git";
+  };
+
+  build-system = with python3Packages; [ setuptools ];
+
+  dependencies = with python3Packages; [
+    PyGObject
+    zeroconf
+    urllib3
+    numpy
+    pillow
+    requests
+    pydbus
+  ];
+
+  meta = {
+    changelog = "${url}/releases/tag/${version}";
+    description = "Philips Hue Sync application for Linux on Wayland";
+    homepage = url;
+    license = lib.licenses.mit;
+    maintainers = [
+      "Engin Kırmacı"
+    ];
+  };
+}

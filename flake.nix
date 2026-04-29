@@ -45,24 +45,27 @@
           ];
 
           nativeBuildInputs = with pkgs; [
+            gobject-introspection
             gtk4
             libadwaita
-            xdg-desktop-portal
-            gobject-introspection
+            openssl
             wrapGAppsHook4
+            xdg-desktop-portal
           ];
 
           ## Specify production dependencies:
           propagatedBuildInputs = with pkgs; [
-            openssl
-            python3Packages.gst-python
-            python3Packages.numpy
-            python3Packages.pillow
-            python3Packages.pydbus
-            python3Packages.pygobject3
-            python3Packages.requests
-            python3Packages.urllib3
-            python3Packages.zeroconf
+          ];
+
+          dependencies = with pkgs.python3Packages; [
+            gst-python
+            numpy
+            pillow
+            pydbus
+            pygobject3
+            requests
+            urllib3
+            zeroconf
           ];
 
           ## Specify test dependencies:
@@ -81,7 +84,7 @@
             runHook postCheck
           '';
 
-          meta.mainProgram = "lumux";
+          meta.mainProgram = project.name;
         };
 
         ## Make our package editable:
